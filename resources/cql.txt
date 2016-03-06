@@ -1,0 +1,3 @@
+
+CREATE KEYSPACE waveseeker WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+CREATE TABLE waveseeker.ticks (symbol ascii, interval_ms bigint, timestamp_ms bigint, tick_id timeuuid, price float, volume float, PRIMARY KEY ((symbol, interval_ms), tick_id)) WITH CLUSTERING ORDER BY (tick_id ASC);
