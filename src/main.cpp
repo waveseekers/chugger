@@ -1,11 +1,74 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include "vendor/cassandra/cassandra.h"
 #include "csv.hpp"
+#include "vendor/cassandra/cassandra.h"
+#include "shared/datalib.hpp"
 #include "shared/time.hpp"
+#include "shared/tick.hpp"
 
 static const int BATCH_COUNT = 100;
+static const bool CSV_SKIP_FIRST_LINE = true;
+
+void
+CassPrintError(CassFuture* future) {
+    const char* message;
+    size_t message_length;
+    cass_future_error_message(future, &message, &message_length);
+    fprintf(stderr, "Error: %.*s\n", (int)message_length, message);
+}
+
+CassError
+PrepareTickInsert(CassSession* session, const CassPrepared** prepared)
+{
+    CassError rc = CASS_OK;
+    CassStatement* statement = NULL;
+    CassFuture* future = NULL;
+    const char* query;
+    query = "INSERT INTO waveseeker.ticks (symbol, interval_ms, timestamp_ms, price, volume) VALUES (?, ?, ?, ?, ?);";
+//    query = "INSERT INTO waveseeker.ticks (symbol, interval_ms, timestamp_ms, price, volume) VALUES ('%s', %lu, %lu, %f, %f);";
+
+    future = cass_session_prepare(session, query);
+    cass_future_wait(future);
+
+    rc = cass_future_error_code(future);
+    if (rc != CASS_OK) {
+        CassPrintError(future);
+    } else {
+        *prepared = cass_future_get_prepared(future);
+    }
+    cass_future_free(future);
+
+    return rc;
+}
+
+CassError
+InsertWithPrepared(CassSession* session, const CassPrepared* prepared, ws::Tick* tick)
+{
+    CassError rc = CASS_OK;
+    CassStatement* statement = NULL;
+    CassFuture* future = NULL;
+
+    statement = cass_prepared_bind(prepared);
+    cass_statement_bind_string(statement, 0, tick->getSymbolAsChar());
+    cass_statement_bind_int64(statement, 1, tick->getSessionInterval());
+    cass_statement_bind_int64(statement, 2, tick->getTimestamp());
+    cass_statement_bind_float(statement, 3, tick->getPrice());
+    cass_statement_bind_float(statement, 4, tick->getVolume());
+
+    future = cass_session_execute(session, statement);
+    cass_future_wait(future);
+
+    rc = cass_future_error_code(future);
+    if (rc != CASS_OK) {
+        CassPrintError(future);
+    }
+
+    cass_future_free(future);
+    cass_statement_free(statement);
+
+    return rc;
+}
 
 int main() {
     std::cout << "Chugging..." << std::endl;
@@ -32,7 +95,7 @@ int main() {
 
     // Prepare for batch inserts
     CassUuidGen* uuid_gen = cass_uuid_gen_new(); // UUID generator created once per app
-    CassBatch* batch = cass_batch_new(CASS_BATCH_TYPE_LOGGED);
+    const CassPrepared* prepared = NULL;
 
     // open CSV file
     std::ifstream in("../data.csv");
@@ -48,10 +111,16 @@ int main() {
     start = clock();
 
     // parse rows
+    // format: date, time, price, volume
     csv::CSVRow row;
     int count = 0;
     int dt_dd = 0, dt_mo = 0, dt_yyyy = 0;
     int dt_HH = 0, dt_MM = 0, dt_SS = 0, dt_FFF = 0;
+
+    if (CSV_SKIP_FIRST_LINE)
+    {
+        in >> row;
+    }
 
     while (in >> row)
     {
@@ -72,19 +141,25 @@ int main() {
                 ss_HH.str() + ':' + ss_MM.str() + ':' + ss_SS.str() + '.' + ss_FFF.str();
 
         // Instantiate new time object
-//        ws::Time dt(ts);
-//        unsigned long int ts_ms = dt.GetTimestampMilliseconds();
-//        unsigned long int si_ms = dt.GetSessionIntervalMilliseconds();
+        ws::Time dt(ts);
+        unsigned long int ts_ms = dt.GetTimestampMilliseconds();
+        unsigned long int si_ms = dt.GetSessionIntervalMilliseconds();
 
         // Instantiate new tick object
         CassUuid uuid;
         std::string symbol = "6E";
-//        cass_uuid_gen_from_time(uuid_gen, ts_ms, &uuid);
+        cass_uuid_gen_from_time(uuid_gen, ts_ms, &uuid);
+        ws::Tick tick(symbol, ts_ms, std::stof(row[2]), std::stof(row[3]));
+
+        // Insert tick into database
+        if (PrepareTickInsert(session, &prepared) == CASS_OK) {
+            InsertWithPrepared(session, prepared, &tick);
+            cass_prepared_free(prepared);
+        }
 
         if (count % BATCH_COUNT == 0)
         {
             printf("row %u: %s, %s, %s\n", count, row[0].c_str(), row[1].c_str(), ts.c_str());
-//            std::cout << row[0] << "," << row[1] << "," << ts << "\n";
         }
     }
 

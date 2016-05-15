@@ -3,6 +3,7 @@
 
 #include <string>
 #include <time.h>
+//#include <boost/date_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 //#include "datalib.hpp"
 
@@ -21,10 +22,11 @@ namespace ws {
     {
     public:
         Time(const std::string&);
-
         ~Time();
 
-        void SetTimestamp(const std::string&);
+        unsigned long int	GetSessionIntervalMilliseconds();
+        unsigned long int	GetTimestampMilliseconds();
+        void                SetTimestamp(const std::string&);
 
     private:
         std::string datetime_;

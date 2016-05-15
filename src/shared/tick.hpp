@@ -2,9 +2,9 @@
 #define CHUGGER_TICK_HPP
 
 #include <string>
-
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
+#include "time.hpp"
 
 namespace ws
 {
@@ -26,6 +26,8 @@ public:
     // accessors
     float				getPrice();
     std::string			getSymbol();
+    const char*			getSymbolAsChar();
+    unsigned long int	getSessionInterval();
     unsigned long int	getTimestamp();
     float				getVolume();
 
