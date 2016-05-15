@@ -59,7 +59,6 @@ include_directories(${Boost_INCLUDE_DIRS})
 
 
 # Build
-#set(SOURCE_FILES src/main.cpp src/vendor/csv/csv.hpp ${INC_FILES} ${SRC_FILES})
 set(SOURCE_FILES src/main.cpp ${INC_FILES} ${SRC_FILES})
 add_executable(chugger ${SOURCE_FILES})
 target_link_libraries(chugger ${Boost_LIBRARIES} ${Cassandra_LIBRARIES})

@@ -1,3 +1,4 @@
+#include <array>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -7,7 +8,7 @@
 #include "shared/time.hpp"
 #include "shared/tick.hpp"
 
-static const int BATCH_COUNT = 100;
+static const int BATCH_SIZE = 100;
 static const bool CSV_SKIP_FIRST_LINE = true;
 
 void
@@ -19,14 +20,14 @@ CassPrintError(CassFuture* future) {
 }
 
 CassError
-PrepareTickInsert(CassSession* session, const CassPrepared** prepared)
+PrepareTickInsert(CassSession* session,
+                  const CassPrepared** prepared)
 {
     CassError rc = CASS_OK;
     CassStatement* statement = NULL;
     CassFuture* future = NULL;
     const char* query;
     query = "INSERT INTO waveseeker.ticks (symbol, interval_ms, timestamp_ms, price, volume) VALUES (?, ?, ?, ?, ?);";
-//    query = "INSERT INTO waveseeker.ticks (symbol, interval_ms, timestamp_ms, price, volume) VALUES ('%s', %lu, %lu, %f, %f);";
 
     future = cass_session_prepare(session, query);
     cass_future_wait(future);
@@ -43,7 +44,46 @@ PrepareTickInsert(CassSession* session, const CassPrepared** prepared)
 }
 
 CassError
-InsertWithPrepared(CassSession* session, const CassPrepared* prepared, ws::Tick* tick)
+BatchInsertWithPrepared(CassSession* session,
+                        const CassPrepared* prepared,
+                        std::array <ws::Tick, BATCH_SIZE>* ticks)
+{
+    CassError rc = CASS_OK;
+    CassFuture* future = NULL;
+    CassBatch* batch = cass_batch_new(CASS_BATCH_TYPE_LOGGED);
+    const ws::Tick* t;
+
+    for(auto& tick : *ticks)
+    {
+        CassStatement* statement = cass_prepared_bind(prepared);
+        cass_statement_bind_string(statement, 0, tick.getSymbolAsChar());
+        cass_statement_bind_int64(statement, 1, tick.getSessionInterval());
+        cass_statement_bind_int64(statement, 2, tick.getTimestamp());
+        cass_statement_bind_float(statement, 3, tick.getPrice());
+        cass_statement_bind_float(statement, 4, tick.getVolume());
+
+        cass_batch_add_statement(batch, statement);
+        cass_statement_free(statement);
+    }
+
+    future = cass_session_execute_batch(session, batch);
+    cass_future_wait(future);
+
+    rc = cass_future_error_code(future);
+    if (rc != CASS_OK) {
+        CassPrintError(future);
+    }
+
+    cass_future_free(future);
+    cass_batch_free(batch);
+
+    return rc;
+}
+
+CassError
+InsertWithPrepared(CassSession* session,
+                   const CassPrepared* prepared,
+                   ws::Tick* tick)
 {
     CassError rc = CASS_OK;
     CassStatement* statement = NULL;
@@ -112,8 +152,10 @@ int main() {
 
     // parse rows
     // format: date, time, price, volume
+    std::array <ws::Tick, BATCH_SIZE> ticks;
     csv::CSVRow row;
     int count = 0;
+    int tickCount = 0;
     int dt_dd = 0, dt_mo = 0, dt_yyyy = 0;
     int dt_HH = 0, dt_MM = 0, dt_SS = 0, dt_FFF = 0;
 
@@ -151,15 +193,22 @@ int main() {
         cass_uuid_gen_from_time(uuid_gen, ts_ms, &uuid);
         ws::Tick tick(symbol, ts_ms, std::stof(row[2]), std::stof(row[3]));
 
-        // Insert tick into database
-        if (PrepareTickInsert(session, &prepared) == CASS_OK) {
-            InsertWithPrepared(session, prepared, &tick);
-            cass_prepared_free(prepared);
+        // Push tick to ticks array for batch insert
+        if (tickCount > BATCH_SIZE - 1)
+        {
+            tickCount = 0;
+            if (PrepareTickInsert(session, &prepared) == CASS_OK) {
+                BatchInsertWithPrepared(session, prepared, &ticks);
+                cass_prepared_free(prepared);
+                printf("row %u: %s, %s, %s\n", count, row[0].c_str(), row[1].c_str(), ts.c_str());
+            }
         }
 
-        if (count % BATCH_COUNT == 0)
+        // Check valid range for ticks array
+        if (tickCount >=0 && tickCount < BATCH_SIZE)
         {
-            printf("row %u: %s, %s, %s\n", count, row[0].c_str(), row[1].c_str(), ts.c_str());
+            ticks[tickCount] = tick;
+            tickCount++;
         }
     }
 

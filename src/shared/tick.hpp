@@ -24,12 +24,12 @@ public:
     ~Tick();
 
     // accessors
-    float				getPrice();
-    std::string			getSymbol();
-    const char*			getSymbolAsChar();
-    unsigned long int	getSessionInterval();
-    unsigned long int	getTimestamp();
-    float				getVolume();
+    float				getPrice() const;
+    std::string			getSymbol() const;
+    const char*			getSymbolAsChar() const;
+    unsigned long int	getSessionInterval() const;
+    unsigned long int	getTimestamp() const;
+    float				getVolume() const;
 
 private:
     std::string			symbol_;

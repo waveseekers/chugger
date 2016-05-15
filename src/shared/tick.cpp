@@ -24,37 +24,37 @@ ws::Tick::~Tick()
 }
 
 float
-ws::Tick::getPrice()
+ws::Tick::getPrice() const
 {
     return price_;
 }
 
 std::string
-ws::Tick::getSymbol()
+ws::Tick::getSymbol() const
 {
     return symbol_;
 }
 
 const char*
-ws::Tick::getSymbolAsChar()
+ws::Tick::getSymbolAsChar() const
 {
     return symbol_.c_str();
 }
 
 unsigned long int
-ws::Tick::getSessionInterval()
+ws::Tick::getSessionInterval() const
 {
     return timestamp_ - (timestamp_ % SESSION_SHARD_INTERVAL);
 }
 
 unsigned long int
-ws::Tick::getTimestamp()
+ws::Tick::getTimestamp() const
 {
     return timestamp_;
 }
 
 float
-ws::Tick::getVolume()
+ws::Tick::getVolume() const
 {
     return volume_;
 }
