@@ -1,6 +1,16 @@
 
 CREATE KEYSPACE waveseeker WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
-CREATE TABLE waveseeker.ticks (symbol ascii, interval_ms bigint, timestamp_ms bigint, tick_id timeuuid, price float, volume float, PRIMARY KEY ((symbol, interval_ms), tick_id)) WITH CLUSTERING ORDER BY (tick_id ASC);
+CREATE TABLE waveseeker.ticks (
+    symbol ascii,
+    timestamp_ms bigint,
+    price float,
+    volume float,
+    tick_id timeuuid,
+    PRIMARY KEY ((symbol, tick_id), timestamp_ms)
+) WITH CLUSTERING ORDER BY (timestamp_ms ASC);
+
+//CREATE TABLE waveseeker.ticks (symbol ascii, interval_ms bigint, timestamp_ms bigint, price float, volume float, PRIMARY KEY ((symbol, interval_ms), timestamp_ms)) WITH CLUSTERING ORDER BY (timestamp_ms ASC);
+//CREATE TABLE waveseeker.ticks (symbol ascii, interval_ms bigint, timestamp_ms bigint, tick_id timeuuid, price float, volume float, PRIMARY KEY ((symbol, interval_ms), tick_id)) WITH CLUSTERING ORDER BY (interval_ms ASC);
 
 # Queries
 SELECT * FROM waveseeker.bars where token(symbol,metric,resolution,interval_ms) >= token('%s','%s',%i,%lu);

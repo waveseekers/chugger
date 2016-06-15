@@ -4,11 +4,11 @@
 #include <iostream>
 #include "vendor/csv/csv.hpp"
 #include "vendor/cassandra/cassandra.h"
-#include "shared/datalib.hpp"
 #include "shared/time.hpp"
 #include "shared/tick.hpp"
 
-static const int BATCH_SIZE = 100;
+
+static const int BATCH_SIZE = 50;
 static const bool CSV_SKIP_FIRST_LINE = true;
 
 void
@@ -27,7 +27,8 @@ PrepareTickInsert(CassSession* session,
     CassStatement* statement = NULL;
     CassFuture* future = NULL;
     const char* query;
-    query = "INSERT INTO waveseeker.ticks (symbol, interval_ms, timestamp_ms, price, volume) VALUES (?, ?, ?, ?, ?);";
+    query = "INSERT INTO waveseeker.ticks (symbol, tick_id, timestamp_ms, price, volume) "
+            "VALUES (?, ?, ?, ?, ?);";
 
     future = cass_session_prepare(session, query);
     cass_future_wait(future);
@@ -45,19 +46,23 @@ PrepareTickInsert(CassSession* session,
 
 CassError
 BatchInsertWithPrepared(CassSession* session,
+                        CassUuidGen* uuid_gen,
                         const CassPrepared* prepared,
                         std::array <ws::Tick, BATCH_SIZE>* ticks)
 {
     CassError rc = CASS_OK;
     CassFuture* future = NULL;
     CassBatch* batch = cass_batch_new(CASS_BATCH_TYPE_LOGGED);
-    const ws::Tick* t;
+    CassUuid uuid;
 
     for(auto& tick : *ticks)
     {
         CassStatement* statement = cass_prepared_bind(prepared);
+        cass_uuid_gen_from_time(uuid_gen, tick.getTimestamp(), &uuid);
+
         cass_statement_bind_string(statement, 0, tick.getSymbolAsChar());
-        cass_statement_bind_int64(statement, 1, tick.getSessionInterval());
+        cass_statement_bind_uuid(statement, 1, uuid);
+//        cass_statement_bind_int64(statement, 1, tick.getSessionInterval());
         cass_statement_bind_int64(statement, 2, tick.getTimestamp());
         cass_statement_bind_float(statement, 3, tick.getPrice());
         cass_statement_bind_float(statement, 4, tick.getVolume());
@@ -82,6 +87,7 @@ BatchInsertWithPrepared(CassSession* session,
 
 CassError
 InsertWithPrepared(CassSession* session,
+                   CassUuidGen* uuid_gen,
                    const CassPrepared* prepared,
                    ws::Tick* tick)
 {
@@ -89,12 +95,16 @@ InsertWithPrepared(CassSession* session,
     CassStatement* statement = NULL;
     CassFuture* future = NULL;
 
+    CassUuid uuid;
+    cass_uuid_gen_from_time(uuid_gen, tick->getTimestamp(), &uuid);
+
     statement = cass_prepared_bind(prepared);
     cass_statement_bind_string(statement, 0, tick->getSymbolAsChar());
     cass_statement_bind_int64(statement, 1, tick->getSessionInterval());
     cass_statement_bind_int64(statement, 2, tick->getTimestamp());
-    cass_statement_bind_float(statement, 3, tick->getPrice());
-    cass_statement_bind_float(statement, 4, tick->getVolume());
+    cass_statement_bind_uuid(statement, 3, uuid);
+    cass_statement_bind_float(statement, 4, tick->getPrice());
+    cass_statement_bind_float(statement, 5, tick->getVolume());
 
     future = cass_session_execute(session, statement);
     cass_future_wait(future);
@@ -185,31 +195,30 @@ int main() {
         // Instantiate new time object
         ws::Time dt(ts);
         unsigned long int ts_ms = dt.GetTimestampMilliseconds();
-        unsigned long int si_ms = dt.GetSessionIntervalMilliseconds();
 
         // Instantiate new tick object
-        CassUuid uuid;
         std::string symbol = "6E";
-        cass_uuid_gen_from_time(uuid_gen, ts_ms, &uuid);
         ws::Tick tick(symbol, ts_ms, std::stof(row[2]), std::stof(row[3]));
+        ticks[tickCount] = tick;
 
-        // Push tick to ticks array for batch insert
-        if (tickCount > BATCH_SIZE - 1)
+        if (tickCount < BATCH_SIZE - 1)
+        {
+            tickCount++;
+        }
+        else
         {
             tickCount = 0;
             if (PrepareTickInsert(session, &prepared) == CASS_OK) {
-                BatchInsertWithPrepared(session, prepared, &ticks);
+                BatchInsertWithPrepared(session, uuid_gen, prepared, &ticks);
                 cass_prepared_free(prepared);
                 printf("row %u: %s, %s, %s\n", count, row[0].c_str(), row[1].c_str(), ts.c_str());
             }
         }
+    }
 
-        // Check valid range for ticks array
-        if (tickCount >=0 && tickCount < BATCH_SIZE)
-        {
-            ticks[tickCount] = tick;
-            tickCount++;
-        }
+    if (in.eof())
+    {
+        printf("reached eof\n");
     }
 
     // end timer

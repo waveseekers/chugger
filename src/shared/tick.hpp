@@ -5,6 +5,7 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include "time.hpp"
+#include "vendor/cassandra/cassandra.h"
 
 namespace ws
 {
