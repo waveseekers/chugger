@@ -27,7 +27,7 @@ PrepareTickInsert(CassSession* session,
     CassStatement* statement = NULL;
     CassFuture* future = NULL;
     const char* query;
-    query = "INSERT INTO waveseeker.ticks (symbol, tick_id, timestamp_ms, price, volume) "
+    query = "INSERT INTO waveseeker.ticks (symbol, time, timestamp_ms, price, volume) "
             "VALUES (?, ?, ?, ?, ?);";
 
     future = cass_session_prepare(session, query);
